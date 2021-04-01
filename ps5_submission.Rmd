@@ -1,0 +1,360 @@
+---
+title: "ps5"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Scenario
+A team of scientists is working to understand the ecological consequences of an ecosystem restoration project. The study involves comparisons between areas where a restoration intervention has been implemented by removing invasive shrubs (restoration) and otherwise similar areas where invasive shrubs are not removed (control).
+
+Each researcher asks a question about how a different component of this ecosystem responds to the restoration intervention with an eye toward making future restoration more effective.
+
+
+## Research questions
+
+
+### Dataset 1: Pollination
+#### Question: A rare flower species coexists with the invasive shrub, and these two plants share pollinators. Could restoration have a negative effect on the rare flower by reducing the diversity of bee species that pollinate it?
+Study design: Previous research in this region has shown that there are 10 species of bee that act as pollinators for the rare flower. At plants in both the control and the restoration site, the researchers use timed sessions to observe pollination. Each bee that visits the plant is captured and then identified to species in the lab. The number of bee species from each session is recorded.
+
+
+### Topic 1: Tree growth
+#### Question: Can native tree saplings be successful even without going to the effort of removing the invasive shrub? 
+Study design: Similarly sized saplings of a native tree species are grown in a plant nursery and then planted in both the restoration and control plots. After 2 years, researchers measure the centimeter change in trunk circumference for each tree.
+
+
+### Topic 2: Native seedling survival
+#### Question: In the absence of invasive shrubs, will grasses take over the area and halt a natural transition to a native forest ecosystem?
+Study design: In early spring, researchers identify recently germinated seedlings of a native plant species, marking each with a labelled metal tag stuck into the ground. In the fall, the researchers return to record whether the seedling has survived or died. Competition for light from fast-growing grass may reduce survival for the native seedlings.
+
+
+### Topic 4: Microbial diversity
+#### Question: Can restoration practices focused on trees also affect soil microorganisms?
+Study design: Two years after the restoration intervention, soil samples from the restoration and control plots are taken into the lab for DNA metabarcoding. This method allows researchers to record the number of species of microbe present in the soil sample.
+
+
+
+
+
+### What are the outcome variable data types?
+
+Binomial: Discrete. Count of successes out of a known maximum (ie, the number of trials).
+
+Bernoulli: Discrete. Same as binomial but with single trial.
+
+Poisson: Discrete. Count with unknown maximum.
+
+Lognormal: Continuous. values between 0 and infinity. Log-transformed values between negative infinity and infinity.
+
+
+*other potentially helpful stuff*
+
+##### The link functions for glms with different distributions
+
+https://www.statmethods.net/advstats/glm.html
+
+
+##### Normal model with covariate
+
+m <- mle2(y ~ dnorm(mean = a + b * x, sd = s), start = list(a = mean(y), b = 0, s = sd(y)))
+
+
+##### Binomial model with covariate
+
+m <- mle2(y ~ dbinom(prob =  plogis(a + b * x), size = n), start = list(a = 0, b = 0))
+*Note that this a little different than shown previously - just a streamlined version*
+
+
+##### Poisson model with covariate
+
+m <- mle2( y ~ dpois(lambda = a + b * x), start = list(a = mean(y), b = 0))
+
+
+
+
+## Dataset 1: Pollination
+
+Create pollination dataset. Here, I have simulated data based on a hypothetical "true" relationship between restoration treatment and pollinator diversity. This is described by the relationship (-0.2 - 0.05 * restored). Here restored is a dummy variable with values 0 or 1. The plogis() function is the 'inverse logit' function. This allows us to link logit-scaled numbers to the probability scale.
+
+```{r}
+# Decide on number of samples
+n <- 1000
+
+# Make a dummy variable that corresponds to restored or not
+restored <- rep(0:1, each = n/2)
+
+set.seed(1)
+d1 <- data.frame(restored = restored,
+                 y = rbinom(n, p = plogis(-0.2 - 0.05 * restored), size = 10))
+
+
+```
+
+### 1a. Make a plot with an altered y label that describes the outcome variable.
+```{r}
+plot(d1$y ~ factor(d1$restored),
+     ylab = "Number of pollinator species",
+     xlab = "Restoration")
+```
+
+
+### 1b. Write out a null hypothesis
+
+Restoration treatment has no effect on the diversity of bees visiting the native plant species.
+
+
+### 1c. Design a single model that uses 'R speak' (y ~ x) that can be used to test this hypothesis. Run the model and show the model summary. Do the coefficient estimates match the values used to simulate the data?
+```{r}
+m1 <- glm(cbind(y, 10-y) ~ restored, data = d1, family = "binomial")
+summary(m1)
+```
+
+
+### 1d. Write down what the p-value tells you about the null hypothesis.
+
+With a p value greater than 0.05 for the 'restored' coefficient, we fail to reject the null hypothesis.
+
+### 1e. Use the model selection approach to test whether restoration affects your outcome variable by creating a second, intercept only model. Use AIC to compare the models. 
+
+```{r}
+m1_null <- glm(cbind(y, 10-y) ~ 1, data = d1, family = "binomial")
+AIC(m1, m1_null)
+```
+
+### 1f. Write down your interpretation of the AIC values.
+
+The null (intercept only or constant) model outperforms the model where pollinator diversity depends on restoration treatment. Because both models are within 2 units of AIC, we do not rule out that there may be an effect of restoration on pollinator diversity. *Note that the data were simulated based on a small 'true' negative effect of restoration on pollinator diversity.*
+
+
+
+### 1g. Use the parameter estimates from the model in 1c and the appropriate link function to plot the expected (mean) value for the outcome variable in the control and restoration areas. What is the link function for this model? What is the inverse of the link function?
+
+```{r}
+
+plot(d1$y ~ factor(d1$restored),
+     ylab = "Number of pollinator species",
+     xlab = "Restoration")
+
+d1_mean_control <- plogis(coef(m1)[1] + coef(m1)[2] * 0) * 10 # 10 because trials = 10
+d1_mean_restored <- plogis(coef(m1)[1] + coef(m1)[2] * 1) * 10
+
+points(x = c(1,2), 
+       y = c(d1_mean_control, d1_mean_restored),
+       cex = 4, col = "blue", pch = 16)
+
+```
+
+The link function is the logit (in R, using the function called qlogis). The inverse is called the inverse logit (in R, using the function called plogis)
+
+
+### 1h. Run an equivalent model to the one in 1c using mle2. Compare coefficient estimates
+
+```{r}
+library("bbmle")
+m1_mle2 <- mle2(y ~ dbinom(prob = plogis(a + b * restored), size = 10), 
+          start = list(a = 0, b = 0),
+          optimizer = "nlm",
+          data = d1)
+summary(m1_mle2)
+```
+The values of the intercept and slope coefficients are very similar
+
+
+
+## Dataset 2: Tree growth
+
+## Create dataset.
+
+```{r}
+# Decide on number of samples
+
+set.seed(2)
+d2 <- data.frame(restored = restored,
+                 y = round(rlnorm(n, mean = 0.4 + 0.7 * restored, sd = 0.4)))
+
+
+```
+
+### 2a. Make a plot with an altered y label that describes the outcome variable.
+```{r}
+##### [Fill in!]
+```
+
+
+### 2b. Write out a null hypothesis
+
+##### [Fill in!]
+
+
+### 2c. Design a single model that uses 'R speak' (y ~ x) that can be used to test this hypothesis. Run the model and show the model summary.
+
+*Hint: use lm rather than glm, with a direct log transformation of the y values (so that they become normally distributed)*
+```{r}
+##### [Fill in!]
+```
+
+### 2d. Write down what the p-value tells you about the null hypothesis.
+
+##### [Fill in!]
+
+### 2e. Use the model selection approach to test whether restoration affects your outcome variable by creating a second, intercept only model. Use AIC to compare the models. 
+
+```{r}
+##### [Fill in!]
+```
+
+### 2f. Write down your interpretation of the AIC values.
+
+##### [Fill in!]
+
+### 2g. Use the parameter estimates from the model in 2c and the appropriate link function to plot the expected (mean) value for the outcome variable in the control and restoration areas. What is the link function for this model? What is the inverse of the link function?
+
+```{r}
+
+##### [Fill in!]
+
+```
+
+##### [Fill in!]
+
+### 2h. Run an equivalent model to the one in 1c using mle2. Compare coefficient estimates
+
+```{r}
+##### [Fill in!]
+```
+##### [Fill in!]
+
+
+
+
+
+## Dataset 3: Native seedling survival
+
+## Create dataset.
+
+```{r}
+# Decide on number of samples
+
+set.seed(2)
+d3 <- data.frame(restored = restored,
+                 y = round(rbinom(n, p = plogis(-0.2 + 0.3 * restored), size = 1)))
+
+```
+
+### 3a. Make a plot with an altered y label that describes the outcome variable.
+```{r}
+##### [Fill in!]
+```
+
+
+### 3b. Write out a null hypothesis
+
+##### [Fill in!]
+
+
+### 3c. Design a single model that uses 'R speak' (y ~ x) that can be used to test this hypothesis. Run the model and show the model summary.
+
+*Hint: you'll use a glm similar to the other binomial example above*
+```{r}
+##### [Fill in!]
+```
+
+### 3d. Write down what the p-value tells you about the null hypothesis.
+
+##### [Fill in!]
+
+### 3e. Use the model selection approach to test whether restoration affects your outcome variable by creating a second, intercept only model. Use AIC to compare the models. 
+
+```{r}
+##### [Fill in!]
+```
+
+### 3f. Write down your interpretation of the AIC values.
+
+##### [Fill in!]
+
+### 3g. Use the parameter estimates from the model in 3c and the appropriate link function to plot the expected (mean) value for the outcome variable in the control and restoration areas. What is the link function for this model? What is the inverse of the link function?
+
+```{r}
+
+##### [Fill in!]
+
+```
+
+##### [Fill in!]
+
+### 3h. Run an equivalent model to the one in 1c using mle2. Compare coefficient estimates
+
+```{r}
+##### [Fill in!]
+```
+##### [Fill in!]
+
+
+
+
+## Dataset 4: Microbial diversity
+
+## Create dataset.
+
+```{r}
+# Decide on number of samples
+
+set.seed(2)
+d4 <- data.frame(restored = restored,
+                 y = rpois(n, lambda = 3 + 0.3 * restored))
+
+
+```
+
+### 4a. Make a plot with an altered y label that describes the outcome variable.
+```{r}
+##### [Fill in!]
+```
+
+
+### 4b. Write out a null hypothesis
+
+##### [Fill in!]
+
+
+### 4c. Design a single model that uses 'R speak' (y ~ x) that can be used to test this hypothesis. Run the model and show the model summary. 
+
+```{r}
+##### [Fill in!]
+```
+
+### 4d. Write down what the p-value tells you about the null hypothesis.
+
+##### [Fill in!]
+
+### 4e. Use the model selection approach to test whether restoration affects your outcome variable by creating a second, intercept only model. Use AIC to compare the models. 
+
+```{r}
+##### [Fill in!]
+```
+
+
+### 4f. Write down your interpretation of the AIC values.
+
+##### [Fill in!]
+
+### 4g. Use the parameter estimates from the model in 4c and the appropriate link function to plot the expected (mean) value for the outcome variable in the control and restoration areas. What is the link function for this model? What is the inverse of the link function?
+
+```{r}
+
+##### [Fill in!]
+
+```
+
+##### [Fill in!]
+
+### 4h. Run an equivalent model to the one in 1c using mle2. Compare coefficient estimates
+
+```{r}
+##### [Fill in!]
+```
+##### [Fill in!]
